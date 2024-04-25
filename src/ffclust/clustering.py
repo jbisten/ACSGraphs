@@ -126,7 +126,7 @@ def get_groups(clusters,central_index):
 def create_graph(centroids,thr):
     matrix_dist = metrics.matrix_dist(centroids, get_max=True)
     matrix_dist[matrix_dist>thr] = 0
-    G = nx.from_numpy_matrix(matrix_dist)
+    G = nx.from_numpy_array(matrix_dist)
     return G
 
 def join(thr,group):
