@@ -24,17 +24,20 @@
 import shutil
 import os
 import IOFibers as IOF
+from pathlib import Path
 
 def create_output(path):
-    if os.path.exists(path):
-        shutil.rmtree(path)
-    os.mkdir(path)
+    path = Path(path)
+    path.mkdir(exist_ok=True)
     return path
 
 def read_bundles(path):
-    bundles, names = IOF.read_bundles(path)
+    bundles, names, fiber_ids = IOF.read_bundles(path)
     return bundles[0]
 
-def write_bundles(clusters,centroids,bundles_dir,out_path):
+def write_bundles(clusters, cluster_fiber_ids, centroids, bundles_dir, out_path):
     IOF.write_bundles(out_path+"/finalClusters.bundles",clusters)
+    IOF.write_cluster_fiber_ids(cluster_fiber_ids, out_path)
     IOF.write_bundles(out_path+"/centroids.bundles",centroids)
+
+

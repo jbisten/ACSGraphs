@@ -26,6 +26,8 @@ import re
 import struct 
 import random
 import numpy as np
+import ast
+from pathlib import Path
 
 byte_order = "DCBA"
 
@@ -47,12 +49,13 @@ def read_header(path):
     bnames = list(n.replace("'","") for i,n in enumerate(bun_string) if i % 2 == 0)[:-1]
     intervals = list(int(i.replace("]","")) for j,i in enumerate(bun_string) if j % 2 != 0)
     byte_order = (lines[3].split("\'")[-2])
+    fiber_ids = ast.literal_eval(lines[8].split(':')[-1].strip('\n'))
     if byte_order == "DCBA":
         byte_order = "little"
     elif byte_order == "ABCD":
         byte_order = "big"
     f.close()
-    return data_path, dim, nfibers, bnames, intervals, byte_order
+    return data_path, dim, nfibers, bnames, intervals, byte_order, fiber_ids
 
 def read_data(data_path,dim,nfibers,bnames,intervals,byte_order):
     intervals.append(nfibers)
@@ -71,9 +74,8 @@ def read_data(data_path,dim,nfibers,bnames,intervals,byte_order):
     return np.array(bundles)
 
 def read_bundles(path):
-    data_path, dim, nfibers, bnames, intervals, byte_order = read_header(path)
-    return read_data(data_path,dim,nfibers,bnames,intervals, byte_order), bnames
-
+    data_path, dim, nfibers, bnames, intervals, byte_order, fiber_ids = read_header(path)
+    return read_data(data_path,dim,nfibers,bnames,intervals, byte_order), bnames, fiber_ids 
 
 def random_palette(n):
     return [(random.randrange(0, 255), random.randrange(0, 255), random.randrange(0, 255)) for i in range(n)]
@@ -98,7 +100,8 @@ def write_header(path,bnames,intervals,dim,nfibers):
     f.write("    'curves_count' : "+str(nfibers)+",\n")
     f.write("    'data_file_name' : "+"\'*"+os.path.splitext(path+"data")[1]+"\',\n")
     f.write("    'format' : 'bundles_1.0',\n")
-    f.write("    'space_dimension' : "+str(dim)+"\n  }")
+    f.write("    'space_dimension' : "+str(dim)+"\n")
+    f.write("    'bundle_ids' : "+str(bnames)+"\n  }")
     f.close()
 
 def write_data(data_path,bundles,dim):
@@ -125,3 +128,12 @@ def write_bundles(path,bundles,bnames=None,colors=None):
     if colors == None:
         colors = random_palette(len(bnames))
     write_hie(os.path.splitext(path)[0]+".hie",bnames,colors)
+
+def write_cluster_fiber_ids(cluster_fiber_ids, outpath):
+    with open(f'{Path(outpath) / "final_cluster_fiber_ids.txt"}', 'w') as f:
+        print(f'Writing cluster fiber ids . . .')
+        for cluster_ids in cluster_fiber_ids:
+            print(cluster_ids)
+            f.write(','.join(cluster_ids)+'\n')
+
+

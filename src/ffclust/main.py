@@ -24,6 +24,7 @@
 import argparse
 import clustering
 import IO
+import IOFibers as IOF
 import numpy as np
 import logging
 
@@ -44,13 +45,16 @@ def main():
 
     bundles_dir = IO.create_output(args.outdir)
 
+    # fibers = IO.read_bundles(args.infile)
     fibers = IO.read_bundles(args.infile)
-    clusters,centroids,log = clustering.fiber_clustering(fibers,args.points,args.ks,args.thr_seg,args.thr_join)
+    _, _, fiber_ids = IOF.read_bundles(args.infile)
+
+    clusters, centroids, log, final_cluster_fiber_ids = clustering.fiber_clustering(fibers, fiber_ids, args.points,args.ks,args.thr_seg,args.thr_join)
 
     logging.basicConfig(level = logging.INFO, filename = args.outdir+"/stats.log")
     logging.info(log)
 
-    IO.write_bundles(clusters,centroids,bundles_dir,args.outdir)
+    IO.write_bundles(clusters, final_cluster_fiber_ids, centroids,bundles_dir,args.outdir)
 
 
 if __name__=="__main__":

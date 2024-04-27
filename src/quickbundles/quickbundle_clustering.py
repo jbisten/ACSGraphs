@@ -14,28 +14,34 @@ if __name__ == "__main__":
     # Argparsing
     parser = argparse.ArgumentParser()
     parser.add_argument("-i", "--infile", help="Input file in .tck format")
-    parser.add_argument("-o", "--outdir", help="Output path for file in .tck format")
+    parser.add_argument("-o", "--outfile", help="Output path for file in .tck format")
     
     args = parser.parse_args()
 
     streamlines = nib.streamlines.load(args.infile)
     streamlines = streamlines.streamlines
 
-    print(streamlines.shape, type(streamlines))
+    print(len(streamlines), type(streamlines))
 
     #################
     # Quickclustering
     #################
-    qb = QuickBundles(threshold=10.)
+    qb = QuickBundles(threshold=6.)
     clusters = qb.cluster(streamlines)
 
 
-    print(f"Found {i} clusters:", len(clusters))
+    print(f"Found {len(clusters)} clusters")
     print('>>>>>>>>>>>>>>>>>')
-    print("Cluster sizes:", map(len, clusters))
+    print("Cluster sizes:", [len(c) for c in clusters])
     print("Small clusters:", clusters < 10)
     print("Streamlines indices of the first cluster:\n", clusters[0].indices)
     print("Centroid of the last cluster:\n", clusters[-1].centroid)
 
     # TODO: Save file with all centroid streamlines to tck file 
-     
+    tck = Tck(args.outfile)
+    tck.force = True
+    tck.write({})
+    [tck.append(cluster.centroid[:], None) for cluster in clusters]
+    tck.close()
+
+            

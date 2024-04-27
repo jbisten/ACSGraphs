@@ -1,11 +1,12 @@
 import os
 import sys
-sys.path.append('/home/xderes/')
+sys.path.append(os.path.abspath('..'))
 import argparse
 import nibabel as nib
-import FFClust.IOFibers as io
+import IOFibers as io
 from tqdm import tqdm
 import numpy as np
+from bonndit.utils.tck_io import Tck 
 
 
 def resample_polygon(xy: np.ndarray, n_points: int = 100) -> np.ndarray:
@@ -25,41 +26,24 @@ def resample_polygon(xy: np.ndarray, n_points: int = 100) -> np.ndarray:
 
     return xy_interp
 
-def build_argparser():
-    DESCRIPTION = "Convert tractograms (TCK -> Bundle)."
-    p = argparse.ArgumentParser(description=DESCRIPTION)
-    p.add_argument('tractograms', metavar='bundle', help='list of tractograms.')
-    p.add_argument('-i')
-    p.add_argument('-o')
-    p.add_argument('-ts')
-    p.add_argument('-f', '--force', action="store_true", help='overwrite existing output files.')
-    return p
-
-
-def main():
-    parser = build_argparser()
-    args = parser.parse_args()
-    bundles, _ = io.read_bundles(args.i)
-    bundles_ref, _ = io.read_bundles(args.ts)
-    bundles_ref = bundles_ref[0]
-    tck = nib.streamlines.load(args.tractograms)
-    tck = tck.streamlines
-    os.mkdir(args.o)
-    for i, x in tqdm(enumerate(bundles), total=len(bundles)):
-        my_tracto = []
-        for y in x:
-            for j, z in enumerate(bundles_ref):
-                if np.linalg.norm(y-z) < 0.01:
-                    my_tracto.append(tck[j])
-                    tck = np.delete(tck, j, 0)
-                    bundles_ref = np.delete(bundles_ref, j, 0)
-                    break
-        streamlines = nib.streamlines.ArraySequence(my_tracto)
-        mytractogram = nib.streamlines.tractogram.Tractogram(streamlines, affine_to_rasmm=np.identity(4))
-        tractogram = nib.streamlines.tck.TckFile(mytractogram)
-        tractogram.save(args.o + '/' + str(i) + '.tck')
-
-
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser()
+    #parser.add_argument('tractograms', metavar='bundle', help='list of tractograms.')
+    parser.add_argument('-i', '--infile')
+    parser.add_argument('-o', '--outfile')
+    args = parser.parse_args()
 
+    ##############
+    # Read bundles
+    ##############
+    bundles, _ = io.read_bundles(args.infile)
+    bundles = bundles.squeeze(1)
+
+    ###########
+    # Write Tck
+    ###########
+    tck = Tck(args.outfile)
+    tck.force = True
+    tck.write({})
+    [tck.append(bundles[i,:, :], None) for i in range(len(bundles))]
+    tck.close()

@@ -60,39 +60,45 @@ def mapping(point_clusters,r):
             fibers_map[key].append(i)
     return fibers_map
 
-def merge_maps(maps):
+def merge_maps(maps, fiber_ids):
     final_map = {}
     for map in maps:
         for key, val in map.items():
             if key not in final_map:
-                final_map[key] = val
+                final_map[key] = val  
             else:
                 final_map[key].extend(val)
     return final_map
 
-def parallel_mapping(point_clusters,ranges):
-
+def parallel_mapping(point_clusters,ranges, fiber_ids):
     partial_mapping = partial(mapping,point_clusters)
     pool = mp.Pool(num_proc)
     results = pool.map(partial_mapping, ranges)
     pool.close()
-    fiber_clusters = merge_maps(results)
+    fiber_clusters = merge_maps(results, fiber_ids)
     return fiber_clusters
 
-def parallel_reassignment(fibers,fiber_clusters,central_index,thr):
+def parallel_reassignment(fibers, fiber_ids, fiber_clusters,central_index,thr):
     size_filter = 5
     large_clusters,small_clusters,large_indices,small_indices,large_centroids,small_centroids = [], [], [], [], [], []
+    
+    # We imitate the assignment to the clusters by adding the indices 
+    large_cluster_indices, small_cluster_indices = [], []
     small_indices = []
     for key,indices in fiber_clusters.items():
         if len(indices) > size_filter:
             large_indices.append(int(key.split("_")[central_index]))
             c = [fibers[i] for i in indices]
+            i = [fiber_ids[i] for i in indices]
             large_clusters.append(c)
+            large_cluster_indices.append(i)
             large_centroids.append(metrics.centroid_mean_align(c))
         else:
             small_indices.append(int(key.split("_")[central_index]))
             c = [fibers[i] for i in indices]
+            i = [fiber_ids[i] for i in indices]
             small_clusters.append(c)
+            small_cluster_indices.append(i)
             small_centroids.append(metrics.centroid_mean_align(c))
     reassignment = seg.segmentation(21,thr, large_centroids,small_centroids,len(small_centroids), len(large_centroids))
     count = 0
@@ -100,28 +106,36 @@ def parallel_reassignment(fibers,fiber_clusters,central_index,thr):
     num_discarded = 0
     for small_index,large_index in enumerate(reassignment):
         fibers = small_clusters[small_index]
+        ids = small_cluster_indices[small_index]
         if int(large_index)!=-1:
             large_clusters[large_index].extend(fibers)
+            large_cluster_indices[large_index].extend(ids)
             num_fibers_reass += len(fibers)
             count+=1
         else:
             if len(fibers)>2:
                 recover_cluster = small_clusters[small_index]
+                recover_cluster_indices = small_cluster_indices[small_index]
                 large_clusters.append(recover_cluster)
+                large_cluster_indices.append(recover_cluster_indices)
                 large_indices.append(small_indices[small_index])
             else:
                 num_discarded +=1
-    return large_clusters,large_indices
+    return large_clusters,large_indices, large_cluster_indices
 
-def get_groups(clusters,central_index):
+def get_groups(clusters, cluster_fiber_ids, central_index):
     groups = {}
+    group_ids = {}
     for i,cluster in enumerate(clusters):
         index = central_index[i]
+        assert len(cluster) == len(cluster_fiber_ids[i])
         if index not in groups:
             groups[index] = [cluster]
+            group_ids[index] = [cluster_fiber_ids[i]]
         else:
             groups[index].append(cluster)
-    return groups
+            group_ids[index].append(cluster_fiber_ids[i])
+    return groups, group_ids 
 
 def create_graph(centroids,thr):
     matrix_dist = metrics.matrix_dist(centroids, get_max=True)
@@ -129,56 +143,81 @@ def create_graph(centroids,thr):
     G = nx.from_numpy_array(matrix_dist)
     return G
 
-def join(thr,group):
+def join(thr,group_data):
+    group, group_ids = group_data  # unpacking group and associated fiber IDs 
     centroids = [metrics.centroid_mean_align(c) for c in group]
     graph = create_graph(centroids,thr)
     cliques = sorted(nx.find_cliques(graph), key=len, reverse=True)
     visited = {}
-    new_clusters,new_centroids = [] ,[]
+    new_clusters,new_centroids, new_cluster_fiber_ids = [] ,[], [] # Added list init
     for clique in cliques:
         new_cluster = []
+        new_fiber_ids = [] # Added list init
         for node in clique:
             if node not in visited:
                 cluster = group[node]
+                fiber_ids = group_ids[node]  # get the corresponding fiber ID
                 new_cluster.extend(cluster)
+                new_fiber_ids.extend(fiber_ids) # extend with all fiber IDs of the cluster 
                 visited[node] = True
         if len(new_cluster)>0:
             new_clusters.append(new_cluster)
             new_centroids.append(metrics.centroid_mean_align(new_cluster))
-    return new_clusters,new_centroids
+            new_cluster_fiber_ids.append(new_fiber_ids)  # Append the fiber IDs for this new cluster
+    return new_clusters,new_centroids, new_cluster_fiber_ids
 
-def parallel_join(fiber_clusters,cluster_indices,thr):
-    groups = get_groups(fiber_clusters,cluster_indices)
+def parallel_join(fiber_clusters, cluster_fiber_ids, cluster_indices,thr):
+    # Done
+    groups, group_ids = get_groups(fiber_clusters, cluster_fiber_ids, cluster_indices)
     partial_join = partial(join,thr)
     pool = mp.Pool(num_proc)
-    results = pool.map(partial_join, [g for key,g in groups.items()])
+    group_data = [(groups[key], group_ids[key]) for key in groups]  
+    #results = pool.map(partial_join, [g for key,g in groups.items()])
+    results = pool.map(partial_join, group_data)
     pool.close()
-    new_clusters,new_centroids = [], []
-    for clust,centroids in results:
+  
+    new_clusters, new_centroids, new_cluster_fiber_ids = [], [], []
+    for clust,centroids, fiber_ids in results:
         new_clusters.extend(clust)
         new_centroids.extend([c] for c in centroids)
-    return new_clusters,new_centroids
+        new_cluster_fiber_ids.extend(fiber_ids) 
+    return new_clusters,new_centroids, new_cluster_fiber_ids
 
 
-def fiber_clustering(fibers,points,ks,seg_thr,join_thr):
+def fiber_clustering(fibers, fiber_ids,points,ks,seg_thr,join_thr):
     init_time = time.time()
     ranges = get_ranges(len(fibers))
     log = ""
     init = time.time()
+
+    # Point Clustering
+    ##################
     point_clusters = parallel_kmeans(fibers,points,ks)
     log += ("Execution time of kmeans: "+str(round(time.time()-init,2))+" seconds\n")
     init = time.time()
-    fiber_clusters_map = parallel_mapping(point_clusters,ranges)
+    
+    # Preliminary Fiber Clusters
+    ############################
+    fiber_clusters_map = parallel_mapping(point_clusters,ranges, fiber_ids)
     log += ("Execution time of mapping: "+str(round(time.time()-init,2))+" seconds\n")
     init = time.time()
     central_index = int((len(points) - 1)/2)
-    fiber_clusters,cluster_indices = parallel_reassignment(fibers,fiber_clusters_map,central_index,seg_thr)
+    
+    # Fiber Clusters
+    ################
+    fiber_clusters,cluster_indices, large_cluster_fiber_ids = parallel_reassignment(fibers, fiber_ids, fiber_clusters_map,central_index,seg_thr)
     log += ("Execution time of reassignment: "+str(round(time.time()-init,2))+" seconds\n")
     init = time.time()
-    final_clusters,centroids = parallel_join(fiber_clusters,cluster_indices,join_thr)
+
+    # Final Clusters 
+    ################
+    final_clusters,centroids, final_cluster_fiber_ids = parallel_join(fiber_clusters, large_cluster_fiber_ids, cluster_indices, join_thr)
+
+    print(final_cluster_fiber_ids)
+
     log += ("Execution time of join: "+str(round(time.time()-init,2))+" seconds\n")
     log += ("TOTAL TIME: "+str(round(time.time()-init_time,2))+" seconds\n\n")
     log += ("Number of clusters before reassignment: " + str(len(fiber_clusters_map)) + "\n")
     log += ("Number of clusters after reassignment: " + str(len(fiber_clusters)) + "\n")
     log += ("Number of FINAL CLUSTERS: " + str(len(final_clusters))+"\n")
-    return final_clusters,centroids,log
+    return final_clusters,centroids,log, final_cluster_fiber_ids
