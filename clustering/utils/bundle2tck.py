@@ -36,7 +36,7 @@ if __name__ == '__main__':
     ##############
     # Read bundles
     ##############
-    bundles, _ = io.read_bundles(args.infile)
+    bundles, _, _ = io.read_bundles(args.infile)
     bundles = bundles.squeeze(1)
 
     ###########

@@ -133,7 +133,6 @@ def write_cluster_fiber_ids(cluster_fiber_ids, outpath):
     with open(f'{Path(outpath) / "final_cluster_fiber_ids.txt"}', 'w') as f:
         print(f'Writing cluster fiber ids . . .')
         for cluster_ids in cluster_fiber_ids:
-            print(cluster_ids)
             f.write(','.join(cluster_ids)+'\n')
 
 

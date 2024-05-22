@@ -2,7 +2,7 @@ import os
 import sys
 import argparse  # Import argparse for command-line parsing
 import nibabel as nib  # Import nibabel for handling neuroimaging files
-sys.path.append(os.path.abspath('..'))
+sys.path.append(os.path.abspath('/home/justus/codebase/ACSGraphs/src/ffclust/'))
 import IOFibers as io  # Import a custom module for fiber bundle operations
 import numpy as np  # Import numpy for numerical operations
 from pathlib import Path
@@ -31,10 +31,9 @@ def resample_polygon(xy: np.ndarray, n_points: int = 100) -> np.ndarray:
     return xy_interp
 
 # Function to find the sub-XXXXX descriptor and convert it to float32
-# Function to find the sub-XXXXX descriptor
 def find_subject_descriptor(path):
     for part in path.parts:
-        if part.startswith("sub-") and part[4:].isdigit():
+        if part.startswith("sub-") and part[4:9].isdigit():
             return part
     return None  # Return None if no matching part is found
 
@@ -53,6 +52,7 @@ def main():
     all_bundles = []
     bundle_ids = []
     for tck_in in args.infiles:
+        print(tck_in)
         tck_path = Path(tck_in)
         if nib.streamlines.detect_format(tck_in) is not nib.streamlines.TckFile:
             print("Skipping non-TCK file: '{}'".format(tck_in))

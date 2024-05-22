@@ -183,7 +183,6 @@ def parallel_join(fiber_clusters, cluster_fiber_ids, cluster_indices,thr):
         new_cluster_fiber_ids.extend(fiber_ids) 
     return new_clusters,new_centroids, new_cluster_fiber_ids
 
-
 def fiber_clustering(fibers, fiber_ids,points,ks,seg_thr,join_thr):
     init_time = time.time()
     ranges = get_ranges(len(fibers))
@@ -212,8 +211,6 @@ def fiber_clustering(fibers, fiber_ids,points,ks,seg_thr,join_thr):
     # Final Clusters 
     ################
     final_clusters,centroids, final_cluster_fiber_ids = parallel_join(fiber_clusters, large_cluster_fiber_ids, cluster_indices, join_thr)
-
-    print(final_cluster_fiber_ids)
 
     log += ("Execution time of join: "+str(round(time.time()-init,2))+" seconds\n")
     log += ("TOTAL TIME: "+str(round(time.time()-init_time,2))+" seconds\n\n")
