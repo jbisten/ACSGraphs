@@ -1,15 +1,21 @@
-#!/bin/bash
+##!/bin/bash
 # Initialize variable
 BIDS_DIR=""
 num_processes=20
 SUBJECT=""  # New variable for the optional subject argument
 
+# Function to wait for all background jobs to finish
+wait_for_jobs() {
+    while [[ $(jobs -r -p | wc -l) -gt 0 ]]; do
+        wait -n
+    done
+}
 
 # Loop through arguments
 while [[ "$#" -gt 0 ]]; do
     case $1 in
         --config) CONFIG="$2"; shift ;;  # If --data is found, set BIDS_DIR to the next argument
-		--subject) SUBJECT="$2"; shift ;;  # New case for --subject
+        --subject) SUBJECT="$2"; shift ;;  # New case for --subject
         *) echo "Unknown parameter passed: $1"; exit 1 ;;
     esac
     shift  # Move to next argument
@@ -23,7 +29,7 @@ fi
 
 ########################################################
 #
-#					Config Processing
+#                    Config Processing
 #
 ########################################################
 echo ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>"
@@ -62,98 +68,97 @@ for sub in "${bids_ids[@]}"; do
     subject_dir="$bids_dir/$sub"
 
     for session_dir in "$subject_dir"/*/; do
-	session=$(basename "$session_dir")
-    session_dwi="$subject_dir/$session/dwi"
-    session_anat="$subject_dir/$session/anat"
-    preproc="$DERIVATIVES/$sub/$session/dwi/preproc"
-    tracts="$DERIVATIVES/$sub/$session/dwi/tracts"
-    mni="$DERIVATIVES/$sub/$session/dwi/mni"
-    t1_brain_template="/usr/local/fsl/data/standard/MNI152_T1_1mm_brain.nii.gz"
-    dti_FA="${preproc}/dti_FA.nii.gz"
-    t1=$(find "$session_anat/" -maxdepth 1 -name "*T1w*.nii.gz" -type f)
+        session=$(basename "$session_dir")
+        session_dwi="$subject_dir/$session/dwi"
+        session_anat="$subject_dir/$session/anat"
+        preproc="$DERIVATIVES/$sub/$session/dwi/preproc"
+        tracts="$DERIVATIVES/$sub/$session/dwi/tracts"
+        mni="$DERIVATIVES/$sub/$session/dwi/mni"
+        t1_brain_template="/usr/local/fsl/data/standard/MNI152_T1_1mm_brain.nii.gz"
+        dti_FA="${preproc}/dti_FA.nii.gz"
+        t1=$(find "$session_anat/" -maxdepth 1 -name "*T1w*.nii.gz" -type f)
 
-	####################################################
-	# 		Extract the variables for each subject
-	#################################################### 
-    IFS=$'\t' read -r group fmri id affected_hemisphere excluded<<< $(python ./utils/get_subject_meta.py ${participants_tsv} ${sub})
+        ####################################################
+        #         Extract the variables for each subject
+        #################################################### 
+        IFS=$'\t' read -r group fmri id affected_hemisphere excluded<<< $(python ./utils/get_subject_meta.py ${participants_tsv} ${sub})
 
-    if [[ "$excluded" == "yes" ]]; then
-		echo "Skipping subject ${sub}, excluded . . ."
-		continue
-	fi
-
-    if [[ "$fmri" -eq 0 ]] && [[ "$seeding" == "fmri" ]]; then
-		echo "Skipping subject ${sub}, no fmri data . . ."
-		continue
-	fi
-
-    echo "Processing Subject: $sub"
-    sides=('lh' 'rh')
-
-    # Warp Target Left AF to MNI
-    for h in "${sides[@]}"; do 
-        if [[ "$affected_hemisphere" == ${h} || $h == "nan" ]]; then
-		    echo "Skipping ${sub} hemisphere (${h}): hemisphere is affected . . ."
-		    continue
-	    fi
-        (
-
-        ########################################
-        #         Warping streamlines
-        ########################################
-        tck_in="${tracts}/ukft_af_${h}.tck"
-        tck_out="${tracts}/mni_ukft_af_${h}.tck"
-
-        mean_B0_to_t1="${mni}/t1_to_mean_B0_0GenericAffine.mat"
-        t1_to_t1_mni_affine="${mni}/t1_to_t1_mni_0GenericAffine.mat"
-        t1_to_t1_mni_warp="${mni}/t1_to_t1_mni_1Warp.nii.gz"
-
-        # TODO: Adapt warpstreams so that it can write .tck and .ply
-        # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-        
-        python3 ./utils/warpstreams.py\
-            -i ${tck_in}\
-            -r ${t1_brain_template}\
-            -t "${mean_B0_to_t1}@0"\
-            -t "${t1_to_t1_mni_affine}@1"\
-            -t "${t1_to_t1_mni_warp}@1"\
-            -o ${tck_out}
-
-        # TODO: we can then ommit this step
-        # Convert to .ply and move to ffclust dir
-        tractconv -i ${tck_out} -o ${kmeans}/${sub}_mni_ukft_af_${h}.ply -r ${t1_brain_template} 
-
-        # Calculate radial diffusivity
-		fslmaths ${preproc}/dti_L2.nii.gz -add ${preproc}/dti_L3.nii.gz -div 2 ${preproc}/dti_RD.nii.gz 
-        fslmaths ${preproc}/dti_L1.nii.gz -add ${preproc}/dti_L2.nii.gz -add ${preproc}/dti_L3.nii.gz ${preproc}/dti_TR.nii.gz 
-        
-        # TODO: Enrich .ply with features
-        python ./utils/augmentply.py --inply "${kmeans}/${sub}_mni_ukft_af_${h}.ply" \
-                --outply "${kmeans}/${sub}_mni_ukft_af_${h}.ply" \
-                --fa "${preproc}/dti_FA.nii.gz" \
-                --ad "${preproc}/dti_L1.nii.gz" \
-                --rd "${preproc}/dti_RD.nii.gz" \
-                --md "${preproc}/dti_MD.nii.gz" \
-                --tr "${preproc}/dti_TR.nii.gz" \
-                --l1 "${preproc}/dti_L1.nii.gz" \
-                --l2 "${preproc}/dti_L2.nii.gz" \
-                --l3 "${preproc}/dti_L3.nii.gz" 
-
-        ) &
-
-        if [[ $(jobs -r -p | wc -l) -ge $num_processes ]]; then
-            wait -n
+        if [[ "$excluded" == "yes" ]]; then
+            echo "Skipping subject ${sub}, excluded . . ."
+            continue
         fi
+
+        if [[ "$fmri" -eq 0 ]] && [[ "$seeding" == "fmri" ]]; then
+            echo "Skipping subject ${sub}, no fmri data . . ."
+            continue
+        fi
+
+        echo "Processing Subject: $sub"
+        sides=('lh' 'rh')
+
+        # Warp Target Left AF to MNI
+        for h in "${sides[@]}"; do 
+            if [[ "$affected_hemisphere" == ${h} || $h == "nan" ]]; then
+                echo "Skipping ${sub} hemisphere (${h}): hemisphere is affected . . ."
+                continue
+            fi
+            (
+
+            mean_B0_to_t1="${mni}/t1_to_mean_B0_0GenericAffine.mat"
+            t1_to_t1_mni_affine="${mni}/t1_to_t1_mni_0GenericAffine.mat"
+            t1_to_t1_mni_warp="${mni}/t1_to_t1_mni_1Warp.nii.gz"
+
+            # Convert to .ply
+            tractconv -i ${tracts}/ukft_af_${h}.tck -o ${kmeans}/${sub}_ukft_af_${h}.ply -r ${dti_FA} 
+
+            # Clean up copied tck
+            rm ${tracts}/ukft_af_${h}.tck
+
+            # Calculate radial diffusivity
+            fslmaths ${preproc}/dti_L2.nii.gz -add ${preproc}/dti_L3.nii.gz -div 2 ${preproc}/dti_RD.nii.gz 
+            
+            
+            # Enrich .ply with features
+            python ./utils/augmentply.py --inply "${kmeans}/${sub}_ukft_af_${h}.ply" \
+                    --outply "${kmeans}/${sub}_ukft_af_${h}.ply" \
+                    --fa "${preproc}/dti_FA.nii.gz" \
+                    --ad "${preproc}/dti_L1.nii.gz" \
+                    --rd "${preproc}/dti_RD.nii.gz" \
+                    --md "${preproc}/dti_MD.nii.gz" \
+                    --l1 "${preproc}/dti_L1.nii.gz" \
+                    --l2 "${preproc}/dti_L2.nii.gz" \
+                    --l3 "${preproc}/dti_L3.nii.gz" 
+
+
+
+            ########################################
+            #         Warping streamlines
+            ########################################
+            python3 ./utils/warpstreams.py\
+                -i "${kmeans}/${sub}_ukft_af_${h}.ply"\
+                -r ${t1_brain_template}\
+                -t "${mean_B0_to_t1}@0"\
+                -t "${t1_to_t1_mni_affine}@1"\
+                -t "${t1_to_t1_mni_warp}@1"\
+                -o "${kmeans}/${sub}_mni_ukft_af_${h}.ply"
+    
+            ) &
+
+            if [[ $(jobs -r -p | wc -l) -ge $num_processes ]]; then
+                wait -n
+            fi
         done
     done
 done
 
-for h in "${sides[@]}"; do (
+# Wait for all background processes to finish for subject processing
+wait_for_jobs
 
-    CMD="python ./utils/tcks2ply.py"
+for h in "${sides[@]}"; do (
+    CMD="python ./utils/concatenateplys.py"
 
     # Loop over files matching the pattern in the directory
-    for file in ${kmeans}/*_mni_ukft_af_${h}.tck; do
+    for file in ${kmeans}/*_mni_ukft_af_${h}.ply; do
         if [ -f "$file" ]; then  # Check if it is a file and not an empty result
             CMD+=" --infiles $file"
         fi
@@ -173,8 +178,10 @@ for h in "${sides[@]}"; do (
     if [[ $(jobs -r -p | wc -l) -ge $num_processes ]]; then
         wait -n
     fi
- 
 done
 
+# Wait for all background processes to finish for clustering
+wait_for_jobs
 
+echo "Done"
 

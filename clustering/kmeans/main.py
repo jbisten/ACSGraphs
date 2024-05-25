@@ -7,13 +7,13 @@ import numpy as np
 from bonndit.utils.tck_io import Tck
 import sys
 import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-from plyio import save_centroid_ply, save_cluster_ply
+sys.path.append(os.path.abspath("/home/justus/codebase/ACSGraphs/clustering/utils/"))
+from plyio import save_centroid_ply, save_cluster_ply, save_individual_clusters
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Perform clustering on a dataset of streamlines')
     parser.add_argument('--infile', help='Input streamlines file')
-    parser.add_argument('--k', type=int, default=5, help='Number of clusters to be used for each point in K-Means for map')
+    parser.add_argument('--k', type=int, default=7, help='Number of clusters to be used for each point in K-Means for map')
     parser.add_argument('--outdir', help='Directory where to place all output')
     args = parser.parse_args()
 
@@ -37,5 +37,6 @@ if __name__ == '__main__':
     cluster_centroids = get_cluster_centroids(streamlines, k, cluster_ids)
 
     # Write output .ply files
-    save_centroid_ply(cluster_centroids, filename=f'{str(outdir / "kmeans_centroids.ply")}')
-    save_cluster_ply(streamlines, sub_ids, cluster_ids, filename=f'{str(outdir / "kmeans_clusters.ply")}')
+    #save_centroid_ply(cluster_centroids, filename=f'{str(outdir / "kmeans_centroids.ply")}')
+    save_cluster_ply(infile, cluster_ids, outdir=outdir)
+    save_individual_clusters(str(outdir/'clusters.ply'), outdir=outdir)

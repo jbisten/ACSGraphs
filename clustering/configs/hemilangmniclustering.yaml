@@ -1,5 +1,5 @@
-bids_dir: /home/justus/datasets/justus_kleine_denkmurmel
-participants_tsv: /home/justus/datasets/justus_kleine_denkmurmel/participants.tsv
+bids_dir: /home/justus/publications/hemi_lang_func/data
+participants_tsv: /home/justus/publications/hemi_lang_func/data/participants.tsv
 target: AF # to be implemented: AF | CST | CC
 seeding: roi # roi | wholebrain | frmi  
 clustering:

@@ -61,12 +61,11 @@ if __name__ == '__main__':
     parser.add_argument('--ad', type=str, help='path to the axial diffusivity.')
     parser.add_argument('--rd', type=str, help='path to the radial diffusivity.')
     parser.add_argument('--md', type=str, help='path to the mean apparent diffusion file.')
-    parser.add_argument('--tr', type=str, help='path to the mean apparent diffusion file.')
     parser.add_argument('--l1', type=str, help='path to the fractional anisotropy.')
     parser.add_argument('--l2', type=str, help='path to the axial diffusivity.')
     parser.add_argument('--l3', type=str, help='path to the radial diffusivity.')
     parser.add_argument('-f', '--force', action="store_true", help='overwrite existing output files.')
-    parser.add_argument('-n', '--n_supports', default=21, help='Number of points to which each streamline is resampled')
+    parser.add_argument('-n', '--n_supports', default=100, help='Number of points to which each streamline is resampled')
     
     args = parser.parse_args()  # Parse command line arguments
     n_supports = args.n_supports
@@ -77,7 +76,6 @@ if __name__ == '__main__':
         'ad' : args.ad, 
         'rd' : args.rd, 
         'md' : args.md,
-        'tr' : args.tr,
         'l1' : args.l1, 
         'l2' : args.l2, 
         'l3' : args.l3, 
@@ -89,38 +87,41 @@ if __name__ == '__main__':
     plydata = PlyData.read(inply)
     vertices = np.vstack([plydata['vertices']['x'], plydata['vertices']['y'], plydata['vertices']['z']]).T
     end_indices = plydata['fiber']['endindex']
-    streamlines= np.array([vertices[i - n_supports:i] for i in end_indices])
+    streamlines = [vertices[start:end] for start, end in zip([0] + end_indices[:-1].tolist(), end_indices)] 
+    streamlines = np.array([resample_polygon(s, n_supports) for s in streamlines])  # Resample each streamline    
+    n_streamlines = len(streamlines) 
 
    # Interpolate on vertices
-    interpolated_values = {label: interpolate_data(file_path, streamlines) for label, file_path in feature_paths.items()}
+    vertex_features = {label: interpolate_data(file_path, streamlines) for label, file_path in feature_paths.items()}
 
     # Streamline level features
     end_indices = np.cumsum(np.array([len(s) for s in streamlines]))
     sub_ids = [find_subject_descriptor(inply) for i in range(len(end_indices))]
-    fiber_meta = np.array([end_indices, sub_ids]).T
+    side_ids = np.zeros(len(sub_ids)) if 'lh' in inply.parts[-1] else np.ones(len(sub_ids)) # TODO: check whether this works correctly
+
 
     vertices = np.vstack(streamlines)
 
     # Set datatypes, assign data, and write to .ply file
-    vertex_dtypes = [('x', 'f4'), ('y', 'f4'), ('z', 'f4'), ('fa', 'f4'), ('ad', 'f4'), ('rd', 'f4'), ('md', 'f4'), ('tr', 'f4'), ('l1', 'f4'), ('l2', 'f4'), ('l3', 'f4')]
-    fiber_dtypes = [('endindex', 'i4'), ('subid', 'i4')]
+    vertex_dtypes = [('x', 'f4'), ('y', 'f4'), ('z', 'f4')] + [(feature, 'f4') for feature in vertex_features.keys()]
+    fiber_dtypes = [('endindex', 'i4'), ('subid', 'i4'), ('sideid', 'i4')]
 
     ply_vertices = np.empty(vertices.shape[0], dtype=vertex_dtypes)
     ply_vertices['x'] = vertices[:, 0]
     ply_vertices['y'] = vertices[:, 1]
     ply_vertices['z'] = vertices[:, 2]
-    for label in feature_paths.keys():
-        print(interpolated_values[label].shape)
-        ply_vertices[label] = interpolated_values[label]
+    for feature in vertex_features.keys():
+        ply_vertices[feature] = vertex_features[feature]
 
-    ply_fibers = np.empty(fiber_meta.shape[0], dtype=fiber_dtypes)
-    ply_fibers['endindex'] = fiber_meta[:, 0]
-    ply_fibers['subid'] = fiber_meta[:, 1]
-
+    ply_fibers = np.empty(n_streamlines, dtype=fiber_dtypes)
+    ply_fibers['endindex'] = end_indices
+    ply_fibers['subid'] = sub_ids
+    ply_fibers['sideid'] = side_ids
+    
     vertices = PlyElement.describe(ply_vertices, 'vertices') 
     fibers = PlyElement.describe(ply_fibers, 'fiber')
 
     PlyData([vertices, fibers], text=False).write(outply)
-    print(f'Wrote .ply file with features to {outply}')
-    print(f'Wrote .ply: {os.path.getsize(outply)/1000000} Mb')
+    #print(f'Wrote .ply file with features to {outply}')
+    #print(f'Wrote .ply: {os.path.getsize(outply)/1000000} Mb')
     
