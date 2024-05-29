@@ -85,12 +85,12 @@ if __name__ == "__main__":
     infile = Path(args.infile)
     
     if infile.suffix == '.ply':
-        # TODO: Read out any potential meta information 
         plydata = PlyData.read(infile)
         vertex_features = plydata['vertices'].data.dtype.names
         vertices = np.vstack([plydata['vertices'][field] for field in ['x', 'y', 'z']]).T
         end_indices = plydata['fiber']['endindex']
         sub_ids = plydata['fiber']['subid']
+        side_ids = plydata['fiber']['sideid']
         streamlines = np.array([vertices[i - n_supports:i] for i in end_indices])
         n_streamlines = len(streamlines) 
         
@@ -128,7 +128,7 @@ if __name__ == "__main__":
      
         # Set datatypes, assign data, and write to .ply file
         vertex_dtypes = [('x', 'f4'), ('y', 'f4'), ('z', 'f4')] + [(feature, 'f4') for feature in vertex_features.keys()]
-        fiber_dtypes = [('endindex', 'i4'), ('subid', 'i4')]
+        fiber_dtypes = [('endindex', 'i4'), ('subid', 'i4'), ('sideid', 'i4')]
 
         ply_vertices = np.empty(vertices.shape[0], dtype=vertex_dtypes)
         ply_vertices['x'] = vertices[:, 0]
@@ -140,7 +140,8 @@ if __name__ == "__main__":
         ply_fibers = np.empty(n_streamlines, dtype=fiber_dtypes)
         ply_fibers['endindex'] = end_indices
         ply_fibers['subid'] = sub_ids 
-
+        ply_fibers['sideid'] = side_ids 
+        
         vertices = PlyElement.describe(ply_vertices, 'vertices') 
         fibers = PlyElement.describe(ply_fibers, 'fiber')
 

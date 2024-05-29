@@ -97,8 +97,7 @@ if __name__ == '__main__':
     # Streamline level features
     end_indices = np.cumsum(np.array([len(s) for s in streamlines]))
     sub_ids = [find_subject_descriptor(inply) for i in range(len(end_indices))]
-    side_ids = np.zeros(len(sub_ids)) if 'lh' in inply.parts[-1] else np.ones(len(sub_ids)) # TODO: check whether this works correctly
-
+    side_ids = np.zeros(len(sub_ids)) if 'lh' in inply.parts[-1] else np.ones(len(sub_ids))
 
     vertices = np.vstack(streamlines)
 
@@ -117,7 +116,8 @@ if __name__ == '__main__':
     ply_fibers['endindex'] = end_indices
     ply_fibers['subid'] = sub_ids
     ply_fibers['sideid'] = side_ids
-    
+   
+
     vertices = PlyElement.describe(ply_vertices, 'vertices') 
     fibers = PlyElement.describe(ply_fibers, 'fiber')
 
