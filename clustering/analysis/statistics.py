@@ -1,162 +1,130 @@
-import torch
-import numpy as np
-from kmeans_pytorch import kmeans
-from pathlib import Path
-import nibabel as nib
-import matplotlib.pyplot as plt
-from plyfile import PlyData, PlyElement
-import matplotlib.cm as cm
+import os
+import glob
+import h5py
 import pandas as pd
-import seaborn as sns 
+import matplotlib.pyplot as plt
+import seaborn as sns
 from scipy.stats import ttest_ind
 
-class Cluster():
-    def __init__(self, k, plydata, participants_df):
-        self.k = k 
-       
-        # Get global end indicies and subids
-        cluster_labels = plydata['fiber']['clusterid']
-        end_indices = plydata['fiber']['endindex']
-        sub_ids = plydata['fiber']['subid']
-        vertices = plydata['vertices']
-        
+class H5Statistics():
+    def __init__(self, res_dir, participants_tsv):
+        """
+        Initialize the H5Statistics class.
 
-        # Determine streamline level descriptors
-        self.cluster_indices = np.where(cluster_labels == k)[0]
-        self.sub_ids = sub_ids[self.cluster_indices]
-        self.n_streamlines = len(self.cluster_indices)
+        Parameters:
+        res_dir (str): The directory containing the HDF5 files.
+        participants_tsv (str): The path to the participants TSV file with demographic information.
+        """
+        self.res_dir = res_dir
+        self.participants_tsv = participants_tsv
+        self.h5_files = self._load_tract_h5s()
+        print(len(self.h5_files.keys()))
+        self.demographics = self._load_demographics()
 
-        # Get vertex level descriptors for the cluster
-        cluster_vertex_indices = []
-        cluster_end_ids = []      
-        i = 0 
-        for idx in self.cluster_indices:
-            start_idx = end_indices[idx-1] if idx > 0 else 0
-            end_idx = end_indices[idx]
-            cluster_vertex_indices.extend(range(start_idx, end_idx))
-            i += end_idx-start_idx
-            cluster_end_ids.append(i)
+    def _load_tract_h5s(self):
+        """
+        Load all HDF5 files in the specified directory using glob.
 
-        self.end_indices = np.array(cluster_end_ids)
+        Returns:
+        dict: A dictionary where keys are filenames and values are HDF5 file handles.
+        """
+        h5_files = {}
+        h5_paths = glob.glob(os.path.join(self.res_dir, '*.h5'))
+        for file_path in h5_paths:
+            filename = os.path.basename(file_path)
+            h5_files[filename] = h5py.File(file_path, 'r')
+        return h5_files
 
-        # Ensure indices are within bounds
-        cluster_vertex_indices = np.array(cluster_vertex_indices)
-        self.vertices = vertices[cluster_vertex_indices]
-        _, self.subject_counts = np.unique(self.sub_ids, return_counts=True) 
+    def _load_demographics(self):
+        """
+        Load the participants TSV file with demographic information.
 
-class ClusterPly():
-    def __init__(self, plyfile, participants_tsv):
-        ply_in = Path(plyfile)
-        assert ply_in.suffix == '.ply', "file is not a .ply-file"
-        self.plydata = PlyData.read(ply_in)
-        self.cluster_labels = self.plydata['fiber']['clusterid']
-        self.participants_df = pd.read_csv(participants_tsv, sep='\t')
-        self.clusters = [Cluster(k, self.plydata, self.participants_df) for k in np.unique(self.cluster_labels)]
+        Returns:
+        pandas.DataFrame: A DataFrame containing the demographic information.
+        """
+        return pd.read_csv(self.participants_tsv, sep='\t')
 
-        # Get global end indicies and subids
-        self.end_indices = self.plydata['fiber']['endindex']
-        self.sub_ids = self.plydata['fiber']['subid']
-        self.vertices = self.plydata['vertices']
-        self.side_ids = self.plydata['fiber']['sideid']
-        self.demographic = [self.participants_df.loc[self.participants_df['participant_id'] == f'sub-{sub_id:05d}'] for sub_id in self.sub_ids]
+    def extract_statistics(self):
+        """
+        Extract the mean statistics from the HDF5 files and combine with demographic information.
 
-    def get_support(self, plot=False):
-        for C in self.clusters:
-            print(f'Cluster{C.k}, support for each subject {C.subject_counts}, and number of included subject: {len(C.subject_counts)}')
-            
+        Returns:
+        pandas.DataFrame: A DataFrame containing the combined data.
+        """
+        data = []
+        for filename, h5_file in self.h5_files.items():
+            mean_fa = h5_file.attrs.get('mean_fa')
+            mean_ad = h5_file.attrs.get('mean_ad')
+            mean_rd = h5_file.attrs.get('mean_rd')
+            mean_md = h5_file.attrs.get('mean_md')
+            side_id = h5_file.attrs.get('side_id')
+            participant_id = h5_file.attrs.get('sub_id')
+            group = self.demographics.loc[self.demographics['participant_id'] == participant_id, 'Group'].values
 
-    def get_cluster_diff(self, param='fa', plot=False):
-        cluster_data = []
-        for C in self.clusters:
-            if param in C.vertices.dtype.names:
-                streamline_means = []
-                start_idx = 0
-                for end_idx in C.end_indices:
-                    streamline_means.append(np.mean(C.vertices[param][start_idx:end_idx]))
-                    start_idx = end_idx
+            if len(group) == 0:
+                print(f"No group information found for participant ID: {participant_id}")
+                continue
 
-                mean_value = np.mean(streamline_means)
-                print(f'Cluster {C.k}: mean {param} = {mean_value}')
-                cluster_data.append(pd.DataFrame({
-                    'Cluster': [C.k] * len(streamline_means),
-                    param: streamline_means
-                }))
-            else:
-                print(f'Parameter {param} not found in vertices data.')
 
-        if plot and cluster_data:
-            # Concatenate all data for plotting
-            plot_data = pd.concat(cluster_data)
-            plt.figure(figsize=(12, 8))
-            sns.boxplot(x='Cluster', y=param, data=plot_data)
-            plt.title(f'Boxplot of {param} across clusters')
+            group = group[0]
+            data.append({
+                'participant_id': participant_id,
+                'group': group,
+                'side_id': side_id,
+                'mean_fa': mean_fa,
+                'mean_ad': mean_ad,
+                'mean_rd': mean_rd,
+                'mean_md': mean_md
+            })
+
+        df = pd.DataFrame(data)
+        # Handle missing values
+        df.dropna(inplace=True)
+        print("Extracted DataFrame:")
+        print(df.head())
+        return df
+
+    def plot_statistics(self):
+        """
+        Plot the statistics comparing mean_fa, mean_ad, mean_rd, mean_md for left and right tracts,
+        each subdivided by patient and control groups. Also, perform t-tests to determine the significance.
+        """
+        df = self.extract_statistics()
+        print("DataFrame columns:", df.columns)
+
+        required_columns = ['side_id', 'group', 'mean_fa', 'mean_ad', 'mean_rd', 'mean_md']
+        for col in required_columns:
+            if col not in df.columns:
+                raise ValueError(f"Missing required column: {col}")
+
+        metrics = ['mean_fa', 'mean_ad', 'mean_rd', 'mean_md']
+        for metric in metrics:
+            plt.figure(figsize=(12, 6))
+            sns.boxplot(x='side_id', y=metric, hue='group', data=df)
+            plt.title(f'Comparison of {metric} for left and right tracts (patients vs controls)')
+            plt.xlabel('Side ID')
+            plt.ylabel(metric.upper())
+            plt.legend(title='Group')
+
+            # Perform Welch's t-tests for left and right sides
+            for side in ['lh', 'rh']:
+                patients = df[(df['side_id'] == side) & (df['group'] == 'patient')][metric]
+                controls = df[(df['side_id'] == side) & (df['group'] == 'control')][metric]
+
+                print(f"Side {side}, metric {metric} - Patients: {len(patients)}, Controls: {len(controls)}")
+
+                # Check for sufficient data before performing the t-test
+                if len(patients) > 1 and len(controls) > 1:
+                    t_stat, p_value = ttest_ind(patients, controls, equal_var=False)
+                else:
+                    t_stat, p_value = float('nan'), float('nan')
+                    print(f"Insufficient data for t-test for {metric} on side {side}.")
+
+                print(f"T-test for {metric} on side {side}: t={t_stat}, p={p_value}")
+
+                # Annotate the plot with the p-value
+                y_max = df[metric].max()
+                x_pos = -0.2 if side == 'lh' else 0.2
+                plt.text(x_pos, y_max, f'p={p_value:.3e}', horizontalalignment='center', color='red', weight='bold')
+
             plt.show()
-
-    
-    def get_cluster_group_diff(self, param='fa', plot=True):
-        cluster_data_left = []
-        cluster_data_right = []
-
-        for C in self.clusters:
-            if param in C.vertices.dtype.names:
-                subject_means = {}
-                start_idx = 0
-                for end_idx, sub_id, side_id in zip(C.end_indices, C.sub_ids, self.plydata['fiber']['sideid']):
-                    participant_id = f'sub-{sub_id:05d}'
-                    group = self.participants_df.loc[self.participants_df['participant_id'] == participant_id, 'Group'].values[0]
-                    
-                    # Initialize the dictionary for new subjects
-                    if participant_id not in subject_means:
-                        subject_means[participant_id] = {'mean': [], 'group': group, 'side': side_id}
-                    
-                    subject_means[participant_id]['mean'].append(np.mean(C.vertices[param][start_idx:end_idx]))
-                    start_idx = end_idx
-
-                # Compute mean for each subject
-                for participant_id, data in subject_means.items():
-                    data['mean'] = np.mean(data['mean'])
-
-                # Create DataFrame for this cluster
-                cluster_df = pd.DataFrame({
-                    'Cluster': [C.k] * len(subject_means),
-                    param: [data['mean'] for data in subject_means.values()],
-                    'Group': [data['group'] for data in subject_means.values()],
-                    'Side': [data['side'] for data in subject_means.values()]
-                })
-
-                cluster_data_left.append(cluster_df[cluster_df['Side'] == 0])
-                cluster_data_right.append(cluster_df[cluster_df['Side'] == 1])
-            else:
-                print(f'Parameter {param} not found in vertices data.')
-
-        if plot and (cluster_data_left or cluster_data_right):
-            if cluster_data_left:
-                plot_data_left = pd.concat(cluster_data_left)
-                plt.figure(figsize=(12, 8))
-                sns.boxplot(x='Cluster', y=param, hue='Group', data=plot_data_left)
-                plt.title(f'Boxplot of {param} across clusters - Left Hemisphere')
-                plt.show()
-
-            if cluster_data_right:
-                plot_data_right = pd.concat(cluster_data_right)
-                plt.figure(figsize=(12, 8))
-                sns.boxplot(x='Cluster', y=param, hue='Group', data=plot_data_right)
-                plt.title(f'Boxplot of {param} across clusters - Right Hemisphere')
-                plt.show()
-
-        # Perform t-tests
-        for side, cluster_data in [('Left Hemisphere', cluster_data_left), ('Right Hemisphere', cluster_data_right)]:
-            if cluster_data:
-                for cluster_df in cluster_data:
-                    if not cluster_df.empty:
-                        cluster_id = cluster_df['Cluster'].iloc[0]
-                        patients = cluster_df[cluster_df['Group'] == 'patient'][param]
-                        controls = cluster_df[cluster_df['Group'] == 'control'][param]
-                        t_stat, p_val = ttest_ind(patients, controls, equal_var=False)  # Welch's t-test
-                        print(f'T-test results for {param} in Cluster {cluster_id} ({side}): t-stat = {t_stat:.3f}, p-val = {p_val:.3f}')
-            
-
-
-    def get_cluster_profiles(self):
-        pass
-

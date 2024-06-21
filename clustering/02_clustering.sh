@@ -69,13 +69,17 @@ mkdir -p ${cluster_dir}
 CMD="python ./utils/icp.py"
 
 # Loop over files matching the pattern in the directory
-for file in ${cluster_dir}/*_mni_ukft_af_*.ply; do
+for file in ${cluster_dir}/*_mni_final_af_*.tck; do
     if [ -f "$file" ]; then  # Check if it is a file and not an empty result
+        # Form the corresponding _icp_ version of the file name
+        icp_file="${file/_mni_final_af_/_mni_icp_final_af_}"
+        if [ ! -f "$icp_file" ]; then  # Check if the corresponding _icp_ file does not exist
             CMD+=" --infiles $file"
+        fi
     fi
 done
 
-CMD+=" --outfile $cluster_dir/mni_af_icp.ply -f"
+CMD+=" -f"
 
 # Execute the command
 # echo "Executing: $CMD"
@@ -84,8 +88,31 @@ eval $CMD
 # Create algorithm dir
 mkdir  -p ${cluster_dir}/hdbscan_results/
 mkdir  -p ${cluster_dir}/kmeans_results/
+mkdir  -p ${cluster_dir}/quickbundle_results/
 
-python ./kmeans/main.py --infile ${cluster_dir}/mni_af_icp.ply --outdir $cluster_dir/kmeans_results/ 
+
+# Run ICP
+CMD="python ./kmeans/main.py"
+
+# Loop over files matching the pattern in the directory
+for file in ${cluster_dir}/*_mni_icp_final_af_*.tck; do
+    if [ -f "$file" ]; then  # Check if it is a file and not an empty result
+            CMD+=" --infiles $file"
+    fi
+done
+
+for file in ${cluster_dir}/*.h5; do
+    if [ -f "$file" ]; then  # Check if it is a file and not an empty result
+            CMD+=" --inhdf5s $file"
+    fi
+done
+
+CMD+=" --k 3 --outdir ${cluster_dir}/kmeans_results/"
+
+eval $CMD
+
+
+#python ./kmeans/main.py --infiles ${cluster_dir}/mni_af_icp.tck --hdf5in --outdir $cluster_dir/kmeans_results/
 #python ./hdbscan/main.py --infile ${cluster_dir}/mni_af_icp.ply --outdir $cluster_dir/hdbscan_results/ 
 
 echo "Done"

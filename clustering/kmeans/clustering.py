@@ -4,7 +4,6 @@ from kmeans_pytorch import kmeans
 from pathlib import Path
 import nibabel as nib
     
-
 def gpu_sc(streamlines, k):
  # Check if the input is a NumPy array and convert if necessary
     if isinstance(streamlines, np.ndarray):

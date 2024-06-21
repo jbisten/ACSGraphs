@@ -1,4 +1,4 @@
-##!/bin/bash
+#!/bin/bash
 # Initialize variable
 BIDS_DIR=""
 num_processes=20
@@ -28,9 +28,7 @@ if [[ -z "$CONFIG" ]]; then
 fi
 
 ########################################################
-#
-#                    Config Processing
-#
+#                   Config Processing
 ########################################################
 echo ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>"
 echo "MNI Clustering Script Hemispherotomy Patients"
@@ -64,7 +62,9 @@ fi
 # Create Derivatives Working Directory
 cluster_dir="${DERIVATIVES}/clustering"
 mkdir -p ${cluster_dir}
-for sub in "${bids_ids[@]}"; do
+
+for sub in "${bids_ids[@]}"; do 
+
     subject_dir="$bids_dir/$sub"
 
     for session_dir in "$subject_dir"/*/; do
@@ -99,44 +99,58 @@ for sub in "${bids_ids[@]}"; do
         echo "Processing Subject: $sub"
         sides=('lh' 'rh')
 
-        for h in "${sides[@]}"; do 
+        for h in "${sides[@]}"; do
             if [[ "$affected_hemisphere" == ${h} || $h == "nan" ]]; then
-    
+                echo "Skipping ${sub} hemisphere (${h}): hemisphere is affected . . ."
+                continue
+            fi
+            ( 
             mean_B0_to_t1="${mni}/t1_to_mean_B0_0GenericAffine.mat"
             t1_to_t1_mni_affine="${mni}/t1_to_t1_mni_0GenericAffine.mat"
             t1_to_t1_mni_warp="${mni}/t1_to_t1_mni_1Warp.nii.gz"
 
             # Convert to .ply
-            tractconv -i ${tracts}/ukft_af_${h}.tck -o ${cluster_dir}/${sub}_ukft_af_${h}.ply -r ${dti_FA} 
-
+            # We dont need this anymore if we use .tck with hdf5 instead
+            # tractconv -i ${tracts}/ukft_af_${h}.tck -o ${cluster_dir}/${sub}_ukft_af_${h}.ply -r ${dti_FA} 
+            
+            # Instead, we move the file to the correct directory
+            cp ${tracts}/final_af_${h}.tck ${cluster_dir}/${sub}_final_af_${h}.tck
+            
             # Calculate radial diffusivity
             fslmaths ${preproc}/dti_L2.nii.gz -add ${preproc}/dti_L3.nii.gz -div 2 ${preproc}/dti_RD.nii.gz 
             
             # Enrich .ply with features
-            python ./utils/augmentply.py --inply "${cluster_dir}/${sub}_ukft_af_${h}.ply" \
-                    --outply "${cluster_dir}/${sub}_ukft_af_${h}.ply" \
+            # python ./utils/augmentply.py --inply "${cluster_dir}/${sub}_ukft_af_${h}.ply" \
+            #        --outply "${cluster_dir}/${sub}_ukft_af_${h}.ply" \
+            #        --fa "${preproc}/dti_FA.nii.gz" \
+            #        --ad "${preproc}/dti_AD.nii.gz" \
+            #        --rd "${preproc}/dti_RD.nii.gz" \
+            #        --md "${preproc}/dti_MD.nii.gz" \
+            #        --l2 "${preproc}/dti_L2.nii.gz" \
+            #        --l3 "${preproc}/dti_L3.nii.gz" 
+
+
+            # Calculate features and write to hdf5
+            python ./utils/augtck.py --infile "${cluster_dir}/${sub}_final_af_${h}.tck" \
+                    --outfile "${cluster_dir}/${sub}_final_af_${h}.h5" \
                     --fa "${preproc}/dti_FA.nii.gz" \
                     --ad "${preproc}/dti_L1.nii.gz" \
                     --rd "${preproc}/dti_RD.nii.gz" \
                     --md "${preproc}/dti_MD.nii.gz" \
-                    --l1 "${preproc}/dti_L1.nii.gz" \
                     --l2 "${preproc}/dti_L2.nii.gz" \
-                    --l3 "${preproc}/dti_L3.nii.gz" 
+                    --l3 "${preproc}/dti_L3.nii.gz"
 
             ########################################
             #         Warping streamlines
             ########################################
             python ./utils/warpstreams.py\
-                -i "${cluster_dir}/${sub}_ukft_af_${h}.ply"\
+                -i "${cluster_dir}/${sub}_final_af_${h}.tck"\
                 -r ${t1_brain_template}\
                 -t "${mean_B0_to_t1}@0"\
                 -t "${t1_to_t1_mni_affine}@1"\
                 -t "${t1_to_t1_mni_warp}@1"\
-                -o "${cluster_dir}/${sub}_mni_ukft_af_${h}.ply"
+                -o "${cluster_dir}/${sub}_mni_final_af_${h}.tck"
 
-            # Cleaning up
-            rm ${cluster_dir}/${sub}_ukft_af_${h}.ply
- 
             ) &
 
             if [[ $(jobs -r -p | wc -l) -ge $num_processes ]]; then

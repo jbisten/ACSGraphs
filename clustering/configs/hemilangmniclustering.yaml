@@ -1,5 +1,5 @@
-bids_dir: /home/justus/publications/hemi_lang_func/data
-participants_tsv: /home/justus/publications/hemi_lang_func/data/participants.tsv
+bids_dir: /data/datasets/hemispherotomy
+participants_tsv: /data/datasets/hemispherotomy/participants.tsv
 target: AF # to be implemented: AF | CST | CC
 seeding: roi # roi | wholebrain | frmi  
 clustering:
