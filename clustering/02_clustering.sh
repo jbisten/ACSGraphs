@@ -1,4 +1,4 @@
-##!/bin/bash
+#!/bin/bash
 # Initialize variable
 BIDS_DIR=""
 num_processes=20
@@ -64,7 +64,8 @@ fi
 # Create Derivatives Working Directory
 cluster_dir="${DERIVATIVES}/clustering"
 mkdir -p ${cluster_dir}
-    
+mkdir -p ${cluster_dir}/ICP_QC
+
 # Run ICP
 CMD="python ./utils/icp.py"
 
@@ -74,7 +75,7 @@ for file in ${cluster_dir}/*_mni_final_af_*.tck; do
         # Form the corresponding _icp_ version of the file name
         icp_file="${file/_mni_final_af_/_mni_icp_final_af_}"
         if [ ! -f "$icp_file" ]; then  # Check if the corresponding _icp_ file does not exist
-            CMD+=" --infiles $file"
+            CMD+=" --infiles $file --qc ${cluster_dir}/ICP_QC"
         fi
     fi
 done
@@ -91,8 +92,8 @@ mkdir  -p ${cluster_dir}/kmeans_results/
 mkdir  -p ${cluster_dir}/quickbundle_results/
 
 
-# Run ICP
-CMD="python ./kmeans/main.py"
+# Run Clustering
+CMD="python ./quickbundles/main.py"
 
 # Loop over files matching the pattern in the directory
 for file in ${cluster_dir}/*_mni_icp_final_af_*.tck; do
@@ -107,7 +108,7 @@ for file in ${cluster_dir}/*.h5; do
     fi
 done
 
-CMD+=" --k 3 --outdir ${cluster_dir}/kmeans_results/"
+CMD+=" --outdir ${cluster_dir}/quickbundle_results/"
 
 eval $CMD
 

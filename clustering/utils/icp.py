@@ -18,13 +18,15 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-i', '--infiles', type=str, action='append', help='input .tck files for processing')
     parser.add_argument('-f', '--force', action="store_true", help='overwrite existing output files.')
-
+    parser.add_argument('-q', '--qc', type=str, help='Output directory for quality control!')
     args = parser.parse_args()  # Parse command line arguments
 
     if args.infiles == None:
         print('ICP data already available, exiting . . .')
         sys.exit()
 
+
+    qc_dir = args.qc
 
     # Load reference
     ref_vertices, ref_streamlines = load_tck(args.infiles[0])
@@ -38,7 +40,6 @@ if __name__ == '__main__':
     #print(ref_vertices.shape)
 
     # Write ref .tck-file, not necessary as this stays as it is
-    
     tck = Tck(str(args.infiles[0]).replace('_mni_', '_mni_icp_'))
     tck.force = True
     tck.write({})
@@ -49,6 +50,17 @@ if __name__ == '__main__':
     ref_indices = np.random.choice(ref_streamlines.shape[0], 100, replace=False)
     ref_vertices = np.vstack(ref_streamlines[ref_indices])
     ref_pc = Pointclouds(points=torch.tensor(ref_vertices, dtype=torch.float32).unsqueeze(0).to('cuda:0'))
+
+        
+    # Write quality control .tck-file
+    qc_indices = np.random.choice(ref_streamlines.shape[0], 10000, replace=True)
+    qc_streamlines = ref_streamlines[qc_indices] 
+    tck = Tck(str(args.qc/argparse[0].parts[-1]).replace('_mni_', '_mni_icp_'))
+
+    tck.force = True
+    tck.write({})
+    [tck.append(s, None) for s in qc_streamlines]
+    tck.close()
 
     for infile in args.infiles[1:]:
         infile = Path(infile)
@@ -77,12 +89,28 @@ if __name__ == '__main__':
         print('ICP Done! Applying transformation . . .')
         R, T, s = result.RTs.R[0].cpu().numpy(), result.RTs.T[0].cpu().numpy(), result.RTs.s[0].cpu().numpy()
 
+
+
         # Align streamlines to ref
         aligned_source_points = np.matmul(np.vstack(src_streamlines), R) + T
-        
+        aligned_streamlines = np.array([aligned_source_points[(e-n_points):e] for e in src_end_ids])
+
+        print(aligned_streamlines.shape)
+
         # Write .tck-file
-        tck = Tck(str(infile).replace('_mni_', '_mni_icp_'))
+        tck = Tck(str(args.qc/infile.parts[-1]).replace('_mni_', '_mni_icp_'))
         tck.force = True
         tck.write({})
-        [tck.append(aligned_source_points[(e-n_points):e], None) for e in src_end_ids]
+        [tck.append(s, None) for s in aligned_streamlines]
         tck.close()
+
+
+        # Write quality control .tck-file
+        qc_indices = np.random.choice(aligned_streamlines.shape[0], 10000, replace=True)
+        qc_streamlines = aligned_streamlines[qc_indices] 
+        tck = Tck(str(qc_dir/infile).replace('_mni_', '_mni_icp_qc'))
+        tck.force = True
+        tck.write({})
+        [tck.append(s, None) for s in qc_streamlines]
+        tck.close()
+
