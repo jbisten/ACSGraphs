@@ -64,7 +64,6 @@ fi
 # Create Derivatives Working Directory
 cluster_dir="${DERIVATIVES}/clustering"
 mkdir -p ${cluster_dir}
-mkdir -p ${cluster_dir}/ICP_QC
 
 # Run ICP
 CMD="python ./utils/icp.py"
@@ -75,7 +74,7 @@ for file in ${cluster_dir}/*_mni_final_af_*.tck; do
         # Form the corresponding _icp_ version of the file name
         icp_file="${file/_mni_final_af_/_mni_icp_final_af_}"
         if [ ! -f "$icp_file" ]; then  # Check if the corresponding _icp_ file does not exist
-            CMD+=" --infiles $file --qc ${cluster_dir}/ICP_QC"
+            CMD+=" --infiles $file --qc ${cluster_dir}/qc"
         fi
     fi
 done
@@ -90,10 +89,11 @@ eval $CMD
 mkdir  -p ${cluster_dir}/hdbscan_results/
 mkdir  -p ${cluster_dir}/kmeans_results/
 mkdir  -p ${cluster_dir}/quickbundle_results/
-
+mkdir  -p ${cluster_dir}/svm_results/
+mkdir  -p ${cluster_dir}/qc/
 
 # Run Clustering
-CMD="python ./quickbundles/main.py"
+CMD="python ./svm/main.py"
 
 # Loop over files matching the pattern in the directory
 for file in ${cluster_dir}/*_mni_icp_final_af_*.tck; do
@@ -108,13 +108,13 @@ for file in ${cluster_dir}/*.h5; do
     fi
 done
 
-CMD+=" --outdir ${cluster_dir}/quickbundle_results/"
+CMD+=" --outdir ${cluster_dir}/svm_results/"
 
 eval $CMD
 
-
 #python ./kmeans/main.py --infiles ${cluster_dir}/mni_af_icp.tck --hdf5in --outdir $cluster_dir/kmeans_results/
 #python ./hdbscan/main.py --infile ${cluster_dir}/mni_af_icp.ply --outdir $cluster_dir/hdbscan_results/ 
+#python ./svm/main.py --infile ${cluster_dir}/mni_af_icp.ply --outdir $cluster_dir/hdbscan_results/ 
 
 echo "Done"
 

@@ -26,7 +26,7 @@ if __name__ == '__main__':
         sys.exit()
 
 
-    qc_dir = args.qc
+    qc_dir = Path(args.qc)
 
     # Load reference
     ref_vertices, ref_streamlines = load_tck(args.infiles[0])
@@ -55,8 +55,7 @@ if __name__ == '__main__':
     # Write quality control .tck-file
     qc_indices = np.random.choice(ref_streamlines.shape[0], 10000, replace=True)
     qc_streamlines = ref_streamlines[qc_indices] 
-    tck = Tck(str(args.qc/argparse[0].parts[-1]).replace('_mni_', '_mni_icp_'))
-
+    tck = Tck(str(qc_dir / Path(args.infiles[0]).parts[-1]).replace('_mni_', '_mni_icp_qc_'))
     tck.force = True
     tck.write({})
     [tck.append(s, None) for s in qc_streamlines]
@@ -78,7 +77,7 @@ if __name__ == '__main__':
         src_vertices = np.vstack(src_streamlines[src_indices])
         src_end_ids = np.cumsum(np.array([len(s) for s in src_streamlines]))
 
-        # src_cluster_ids, _ = kmeans(X=torch.from_numpy(src_streamlines).reshape(src_streamlines.shape[0], -1), num_clusters=100, distance='euclidean', device=torch.device('cuda:0'))
+        # hallo justus  tsrc_cluster_ids, _ = kmeans(X=torch.from_numpy(src_streamlines).reshape(src_streamlines.shape[0], -1), num_clusters=100, distance='euclidean', device=torch.device('cuda:0'))
         # src_vertices = np.vstack([np.mean(src_streamlines[src_cluster_ids == cluster_id], axis=0) for cluster_id in range(100)]).reshape(-1, n_dims)
     
         src_pc = Pointclouds(points=torch.tensor(np.vstack(src_vertices), dtype=torch.float32).unsqueeze(0).to('cuda:0'))
@@ -95,10 +94,8 @@ if __name__ == '__main__':
         aligned_source_points = np.matmul(np.vstack(src_streamlines), R) + T
         aligned_streamlines = np.array([aligned_source_points[(e-n_points):e] for e in src_end_ids])
 
-        print(aligned_streamlines.shape)
-
         # Write .tck-file
-        tck = Tck(str(args.qc/infile.parts[-1]).replace('_mni_', '_mni_icp_'))
+        tck = Tck(str(infile).replace('_mni_', '_mni_icp_'))
         tck.force = True
         tck.write({})
         [tck.append(s, None) for s in aligned_streamlines]
@@ -108,7 +105,7 @@ if __name__ == '__main__':
         # Write quality control .tck-file
         qc_indices = np.random.choice(aligned_streamlines.shape[0], 10000, replace=True)
         qc_streamlines = aligned_streamlines[qc_indices] 
-        tck = Tck(str(qc_dir/infile).replace('_mni_', '_mni_icp_qc'))
+        tck = Tck(str(qc_dir / Path(infile).parts[-1]).replace('_mni_', '_mni_icp_qc_'))
         tck.force = True
         tck.write({})
         [tck.append(s, None) for s in qc_streamlines]
